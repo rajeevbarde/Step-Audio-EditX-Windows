@@ -68,6 +68,7 @@ docker run --rm --gpus all ^
 
 - Base URL: `http://127.0.0.1:8080`  
 - First start loads models (several minutes).  
+- Logs for each `/v1/clone` and `/v1/edit` appear in this window (request id, wait/infer/total seconds, output audio duration, realtime factor).  
 - Stop: focus the window → **Ctrl+C** (or close it). Container uses `--rm`.
 
 Optional env overrides: `STEP_AUDIO_GPU_MEMORY_UTILIZATION`, `STEP_AUDIO_MAX_MODEL_LEN`, `STEP_AUDIO_DTYPE`, `STEP_AUDIO_COSYVOICE_DTYPE`.

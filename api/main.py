@@ -24,6 +24,13 @@ from fastapi.responses import Response
 from api.audio_io import cleanup_path, save_upload_to_temp, tensor_to_wav_bytes
 from api.capabilities import build_capabilities
 from api.engine import engine
+from api.metrics import (
+    InferTimer,
+    audio_duration_sec,
+    format_metrics,
+    new_request_id,
+    truncate,
+)
 from config.edit_config import get_supported_edit_types
 
 logging.basicConfig(
@@ -161,27 +168,76 @@ async def clone(
     if not engine.loaded:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    req_id = new_request_id()
+    timer = InferTimer()
+    prompt = prompt_text.strip()
+    target = target_text.strip()
+    logger.info(
+        "clone start | id=%s | file=%s | prompt_chars=%d | target_chars=%d | prompt=%r | target=%r",
+        req_id,
+        audio.filename,
+        len(prompt),
+        len(target),
+        truncate(prompt),
+        truncate(target),
+    )
+
     path: str | None = None
     try:
         path = await save_upload_to_temp(audio)
         tts = engine.require()
 
         async with _infer_lock:
+            timer.mark_infer_start()
             wav_tensor, sr = await asyncio.to_thread(
                 tts.clone,
                 path,
-                prompt_text.strip(),
-                target_text.strip(),
+                prompt,
+                target,
             )
 
+        times = timer.stop()
+        out_s = audio_duration_sec(wav_tensor, sr)
         body = tensor_to_wav_bytes(wav_tensor, sr)
+        logger.info(
+            format_metrics(
+                op="clone",
+                req_id=req_id,
+                times=times,
+                out_audio_s=out_s,
+                status="ok",
+                bytes=len(body),
+                sr=sr,
+            )
+        )
         return Response(content=body, media_type="audio/wav")
     except HTTPException:
         raise
     except ValueError as e:
+        times = timer.stop()
+        logger.warning(
+            format_metrics(
+                op="clone",
+                req_id=req_id,
+                times=times,
+                out_audio_s=0.0,
+                status="bad_request",
+                error=str(e),
+            )
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception("clone failed")
+        times = timer.stop()
+        logger.exception(
+            format_metrics(
+                op="clone",
+                req_id=req_id,
+                times=times,
+                out_audio_s=0.0,
+                status="error",
+                error=str(e),
+            )
+        )
         raise _http_from_engine_error(e, "Clone failed") from e
     finally:
         cleanup_path(path)
@@ -199,29 +255,83 @@ async def edit(
     if not engine.loaded:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    req_id = new_request_id()
+    timer = InferTimer()
+    prompt = pt.strip() if pt else ""
+    target = tt.strip() if tt else None
+    logger.info(
+        "edit start | id=%s | file=%s | edit_type=%s | edit_info=%s | prompt_chars=%d | target_chars=%s | prompt=%r",
+        req_id,
+        audio.filename,
+        et,
+        info,
+        len(prompt),
+        len(target) if target else 0,
+        truncate(prompt),
+    )
+
     path: str | None = None
     try:
         path = await save_upload_to_temp(audio)
         tts = engine.require()
 
         async with _infer_lock:
+            timer.mark_infer_start()
             wav_tensor, sr = await asyncio.to_thread(
                 tts.edit,
                 path,
-                pt.strip() if pt else "",
+                prompt,
                 et,
                 info,
-                tt.strip() if tt else None,
+                target,
             )
 
+        times = timer.stop()
+        out_s = audio_duration_sec(wav_tensor, sr)
         body = tensor_to_wav_bytes(wav_tensor, sr)
+        logger.info(
+            format_metrics(
+                op="edit",
+                req_id=req_id,
+                times=times,
+                out_audio_s=out_s,
+                status="ok",
+                edit_type=et,
+                edit_info=info,
+                bytes=len(body),
+                sr=sr,
+            )
+        )
         return Response(content=body, media_type="audio/wav")
     except HTTPException:
         raise
     except ValueError as e:
+        times = timer.stop()
+        logger.warning(
+            format_metrics(
+                op="edit",
+                req_id=req_id,
+                times=times,
+                out_audio_s=0.0,
+                status="bad_request",
+                edit_type=et,
+                error=str(e),
+            )
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception("edit failed")
+        times = timer.stop()
+        logger.exception(
+            format_metrics(
+                op="edit",
+                req_id=req_id,
+                times=times,
+                out_audio_s=0.0,
+                status="error",
+                edit_type=et,
+                error=str(e),
+            )
+        )
         raise _http_from_engine_error(e, "Edit failed") from e
     finally:
         cleanup_path(path)
