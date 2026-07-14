@@ -11,7 +11,8 @@ dependencies = [
     "hdbscan>=0.8.41",
     "hyperpyyaml>=1.2.3",
     "librosa>=0.11.0",
-    "onnxruntime-gpu>=1.23.2",
+    # <1.27: 1.27+ links libcudart.so.13; Docker base is CUDA 12.4
+    "onnxruntime-gpu>=1.23.2,<1.27",
     "openai-whisper>=20250625",
     "pytorch-memlab>=0.3.0",
     "rotary-embedding-torch>=0.8.9",
