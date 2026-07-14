@@ -1,0 +1,10 @@
+.venv
+models
+output
+.git
+**/__pycache__
+*.pyc
+*.log
+sparse_logs
+quantization/*.json
+**/.DS_Store
